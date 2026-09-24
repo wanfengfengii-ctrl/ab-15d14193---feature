@@ -1,14 +1,28 @@
 import { useState } from 'react';
 import { analyze } from './analysis';
+import { extractLockingCondition } from './locking';
 import { validatePair } from './validation';
-import type { AnalysisResult, GateEval, Graph, GraphError } from './types';
+import type {
+  AnalysisResult,
+  GateEval,
+  Graph,
+  GraphError,
+  LockingReport,
+} from './types';
 import { GraphSvg } from './components/GraphSvg';
 import { EXAMPLES } from './examples';
 
 type View =
   | { status: 'idle' }
   | { status: 'error'; errors: GraphError[] }
-  | { status: 'ok'; graphA: Graph; graphB: Graph; result: AnalysisResult };
+  | {
+      status: 'ok';
+      graphA: Graph;
+      graphB: Graph;
+      result: AnalysisResult;
+      /** 本次不等价结论下已提取的最少锁定条件；输入变动/重新比较即清除 */
+      locking?: LockingReport;
+    };
 
 function traceValues(trace: GateEval[]): Map<string, 0 | 1> {
   return new Map(trace.map((t) => [t.id, t.value]));
@@ -72,7 +86,24 @@ export function App() {
       return;
     }
     const result = analyze(graphA, graphB);
+    // 新比较完成：结论整体替换，旧锁定条件报告随之失效（不携带 locking）
     setView({ status: 'ok', graphA, graphB, result });
+  };
+
+  // 输入被重新编辑：旧锁定条件报告不得保留（比较结论语义不变，保留展示）
+  const discardLocking = () => {
+    setView((prev) =>
+      prev.status === 'ok' && prev.locking !== undefined
+        ? { ...prev, locking: undefined }
+        : prev,
+    );
+  };
+
+  // 在成功比较出不等价结论后，用户可发起条件提取
+  const runExtract = () => {
+    if (view.status !== 'ok' || view.result.equivalent) return;
+    const report = extractLockingCondition(view.result);
+    if (report !== null) setView({ ...view, locking: report });
   };
 
   const clearAll = () => {
@@ -129,7 +160,10 @@ export function App() {
             className="editor__area"
             spellCheck={false}
             value={textA}
-            onChange={(e) => setTextA(e.target.value)}
+            onChange={(e) => {
+              setTextA(e.target.value);
+              discardLocking();
+            }}
             placeholder='{"nodes":[...],"output":"..."}'
           />
         </div>
@@ -142,7 +176,10 @@ export function App() {
             className="editor__area"
             spellCheck={false}
             value={textB}
-            onChange={(e) => setTextB(e.target.value)}
+            onChange={(e) => {
+              setTextB(e.target.value);
+              discardLocking();
+            }}
             placeholder='{"nodes":[...],"output":"..."}'
           />
         </div>
@@ -235,6 +272,123 @@ export function App() {
                 复算输出：旧图 A = <strong className="mono">{view.result.outputA}</strong>
                 ，新图 B = <strong className="mono">{view.result.outputB}</strong>
               </p>
+            </section>
+          )}
+
+          {!view.result.equivalent && (
+            <section className="locking" data-testid="locking">
+              <div className="locking__head">
+                <h3>最少输入锁定条件</h3>
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid="extract-locking"
+                  onClick={runExtract}
+                >
+                  提取最少锁定条件
+                </button>
+              </div>
+              {view.locking === undefined ? (
+                <p className="locking__hint">
+                  在上方不等价结论基础上可发起条件提取：从本次共享变量序与异或结果
+                  直接求出文字数最少的部分赋值——锁定这些输入后，无论其余输入如何
+                  变化，改版输出都必然与旧版分歧（精确全局裁决，非抽样）。
+                </p>
+              ) : (
+                (() => {
+                  const report = view.locking;
+                  const lockMap = new Map(
+                    report.locked.map((l) => [l.variable, l.value] as const),
+                  );
+                  return (
+                    <div className="locking__report" data-testid="locking-report">
+                      <div className="locking__row">
+                        <span className="locking__label">
+                          锁定项（{report.locked.length} 项，按 ASCII 变量序）：
+                        </span>
+                        <span
+                          className="locking__chips"
+                          data-testid="locking-locked"
+                        >
+                          {report.locked.length === 0 ? (
+                            <span className="locking__none">
+                              （空——无需锁定任何输入）
+                            </span>
+                          ) : (
+                            report.locked.map((lit) => (
+                              <span
+                                key={lit.variable}
+                                className="locking__chip mono"
+                                data-value={lit.value}
+                              >
+                                {lit.variable}={lit.value}
+                              </span>
+                            ))
+                          )}
+                        </span>
+                      </div>
+                      <div className="locking__row">
+                        <span className="locking__label">
+                          未锁定输入（{report.unlocked.length} 个）：
+                        </span>
+                        <span
+                          className="locking__chips"
+                          data-testid="locking-unlocked"
+                        >
+                          {report.unlocked.length === 0 ? (
+                            <span className="locking__none">
+                              （无——全部输入均已锁定）
+                            </span>
+                          ) : (
+                            report.unlocked.map((v) => (
+                              <span
+                                key={v}
+                                className="locking__chip locking__chip--free mono"
+                              >
+                                {v}
+                              </span>
+                            ))
+                          )}
+                        </span>
+                      </div>
+                      <table className="locking__table">
+                        <thead>
+                          <tr>
+                            <th>变量（ASCII 序）</th>
+                            <th>锁定状态</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {report.variables.map((v) => {
+                            const lockedValue = lockMap.get(v);
+                            return (
+                              <tr key={v}>
+                                <td className="mono">{v}</td>
+                                <td className="mono">
+                                  {lockedValue === undefined
+                                    ? '未锁定'
+                                    : `锁定 = ${lockedValue}`}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <p
+                        className="locking__verdict"
+                        data-testid="locking-verdict"
+                      >
+                        核算结论：所有补全均分歧 —— 未锁定输入的全部 2^
+                        {report.unlocked.length} = {report.completionCount}{' '}
+                        种补全下，两图输出必然不同
+                        {report.verified
+                          ? '（异或根在锁定后归约为 1 终端，精确全局复核通过）'
+                          : '（复核未通过：存在不分歧的补全！）'}
+                      </p>
+                    </div>
+                  );
+                })()
+              )}
             </section>
           )}
 

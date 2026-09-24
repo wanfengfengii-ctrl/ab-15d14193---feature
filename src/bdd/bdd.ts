@@ -200,6 +200,95 @@ export class BddManager {
   }
 
   /**
+   * 最少文字蕴含项（最小锁定立方体）：
+   * 返回文字数最少的部分赋值（按变量层升序的 (level, value) 列表），
+   * 使得把其中每个变量固定后，函数的任意补全都为 1；
+   * 并列最少时按“变量序 + 0 先于 1”的字典序取首个。
+   * f 为 0 终端（不可满足）时返回 null。
+   *
+   * 这是精确全局裁决（无抽样、无随机搜索、不只验证单一反例）：
+   * 对节点 (v, low, high)，其全部蕴含项恰分三族——
+   *  - 锁定 v=0：low 的蕴含项加文字 (v,0)；
+   *  - 锁定 v=1：high 的蕴含项加文字 (v,1)；
+   *  - 不锁定 v：low ∧ high 的蕴含项（须同时蕴含两个余因子）。
+   * 三族各自的最优解递归可得，全局最优即三者中文字数最少者；
+   * 同数时按上述字典序——同一节点上恰为“锁定 0 先于锁定 1 先于不锁定”
+   * （前两者首文字变量均为 v，第三者首文字变量必在 v 之后）。
+   */
+  minImplicant(f: BddNode): Array<{ level: number; value: 0 | 1 }> | null {
+    const memo = new Map<BddNode, Array<{ level: number; value: 0 | 1 }>>();
+
+    const rec = (n: BddNode): Array<{ level: number; value: 0 | 1 }> | null => {
+      if (n === ZERO) return null;
+      if (n === ONE) return [];
+      const hit = memo.get(n);
+      if (hit !== undefined) return hit;
+
+      const node = this.nodes[n - 2];
+      let best: Array<{ level: number; value: 0 | 1 }> | null = null;
+      let bestSize = Number.POSITIVE_INFINITY;
+
+      // 族一：锁定当前变量为 0
+      if (node.low !== ZERO) {
+        const sub = rec(node.low)!;
+        best = [{ level: node.level, value: 0 }, ...sub];
+        bestSize = sub.length + 1;
+      }
+      // 族二：锁定当前变量为 1（同长时 0 先于 1，故仅严格更短才替换）
+      if (node.high !== ZERO) {
+        const sub = rec(node.high)!;
+        if (sub.length + 1 < bestSize) {
+          best = [{ level: node.level, value: 1 }, ...sub];
+          bestSize = sub.length + 1;
+        }
+      }
+      // 族三：不锁定当前变量（同长时排最后，故仅严格更短才替换）
+      if (node.low !== ZERO && node.high !== ZERO) {
+        const both = this.apply('and', node.low, node.high);
+        if (both !== ZERO) {
+          const sub = rec(both)!;
+          if (sub.length < bestSize) {
+            best = sub;
+            bestSize = sub.length;
+          }
+        }
+      }
+
+      // 非 0 终端的节点必可满足：low/high 至少其一非 0 终端，best 必非 null
+      memo.set(n, best!);
+      return best;
+    };
+
+    return rec(f);
+  }
+
+  /**
+   * 精确余因子（restrict）：把指定变量层固定为给定值后的函数。
+   * 结果恒为 1 终端 <=> 该部分赋值的所有补全都使函数为 1，
+   * 用于锁定条件的精确全局复核；不参与反例生成。
+   */
+  restrict(f: BddNode, fixed: ReadonlyMap<number, 0 | 1>): BddNode {
+    const memo = new Map<BddNode, BddNode>();
+
+    const rec = (n: BddNode): BddNode => {
+      if (n < 2) return n;
+      const hit = memo.get(n);
+      if (hit !== undefined) return hit;
+
+      const node = this.nodes[n - 2];
+      const v = fixed.get(node.level);
+      const r =
+        v !== undefined
+          ? rec(v === 1 ? node.high : node.low)
+          : this.mk(node.level, rec(node.low), rec(node.high));
+      memo.set(n, r);
+      return r;
+    };
+
+    return rec(f);
+  }
+
+  /**
    * 单赋值求值（标准 BDD restrict 下降）：仅用于测试交叉核对与自检，
    * 不参与反例生成——反例只允许来自 satisfyingAssignment 的摘要直读。
    */

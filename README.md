@@ -4,12 +4,19 @@
 对两份门图做形式化等价判定：等价时给出可复算的 `EQUIVALENT` 结论；不等价时
 直接给出**唯一反例**，并逐门复算两图，供功能安全工程师人工核对。
 
+不等价结论出来后，还可一键发起**最少输入锁定条件提取**：从本次共享变量序与
+异或结果直接求出文字数最少的部分赋值——锁定这些输入后，无论其余输入如何
+变化，改版输出都必然与旧版分歧；报告按 ASCII 变量序稳定展示锁定项、未锁定
+输入及“所有补全均分歧”的核算结论。
+
 - 纯前端：TypeScript + React + Vite + 手写 SVG；**不调用任何业务后端或在线服务**。
 - 判定核心：自行实现的 ROBDD（ASCII 升序共享变量序、唯一表、Apply 计算表、
   两条约简规则），**无全赋值枚举、无第三方 BDD 库**。
 - 每个唯一化节点同时维护到 1 终端的**最小满足赋值摘要**（低分支可满足走低分支，
   否则走高分支，跳过变量补 0）；反例 = 两输出异或根摘要的**直接读取**，
   代码中不存在路径搜索或回溯。
+- 锁定条件提取同样在既有 ROBDD 上完成**精确全局裁决**（蕴含项递归 + restrict
+  复核），不抽样、不随机搜索、不只验证当前反例。
 
 ## 门图 JSON 格式
 
@@ -52,12 +59,21 @@
 3. `D = 0 终端` ⇒ 对所有输入两输出恒等 ⇒ **EQUIVALENT**。
 4. 否则直接读 `D` 节点维护的 witness：它是变量序下**字典序最小**的满足赋值，
    即报告的唯一反例；随后用该赋值对两图每个门做普通布尔复算，输出复算轨迹。
+5. 不等价时可继续**提取最少锁定条件**：在 `D` 上递归求**文字数最少的蕴含项**
+   （锁定这些输入后 `D` 的任意补全恒为 1，即两图必然分歧）。递归对节点
+   `(v, low, high)` 分三族取最优：锁定 `v=0`、锁定 `v=1`、不锁定 `v`
+   （等价于求 `low ∧ high` 的蕴含项）；并列最少时按“变量名 ASCII 序 +
+   0 先于 1”的赋值序列取首个。最后用 `restrict` 把锁定项代回 `D`，
+   归约为 1 终端即完成“所有补全均分歧”的精确全局复核。
+   输入被重新编辑、校验失败、两图等价或新比较尚未完成时，旧条件报告即被清除。
 
 关键源码：
 
-- `src/bdd/bdd.ts` — 唯一表 / 计算表 / 约简 / Apply / witness 不变量
+- `src/bdd/bdd.ts` — 唯一表 / 计算表 / 约简 / Apply / witness 不变量 /
+  最少蕴含项（minImplicant）/ 精确余因子（restrict）
 - `src/validation.ts` — 解析、校验与错误排序
 - `src/analysis.ts` — 建图、异或根、摘要直读、逐门复算
+- `src/locking.ts` — 最少锁定条件报告（锁定项 / 未锁定输入 / 核算结论）
 - `src/graphLayout.ts` / `src/components/GraphSvg.tsx` — SVG 图形
 
 ## 本地开发与测试
@@ -91,9 +107,10 @@ docker compose up --build --exit-code-from verify verify
 
 ```
 src/
-  bdd/bdd.ts            ROBDD 核心
+  bdd/bdd.ts            ROBDD 核心（含 minImplicant / restrict）
   validation.ts         校验与错误排序
   analysis.ts           等价判定 / 反例 / 逐门复算
+  locking.ts            最少输入锁定条件提取
   graphLayout.ts        确定性分层布局
   components/GraphSvg.tsx
   App.tsx main.tsx styles.css examples.ts

@@ -178,6 +178,8 @@ export function analyze(graphA: Graph, graphB: Graph): AnalysisResult {
         cacheHits: builtA.bdd.cacheHits,
         cacheMisses: builtA.bdd.cacheMisses,
       },
+      bdd: builtA.bdd,
+      diffRoot: diff,
     };
   }
 
@@ -199,5 +201,7 @@ export function analyze(graphA: Graph, graphB: Graph): AnalysisResult {
       cacheHits: builtA.bdd.cacheHits,
       cacheMisses: builtA.bdd.cacheMisses,
     },
+    bdd: builtA.bdd,
+    diffRoot: diff,
   };
 }

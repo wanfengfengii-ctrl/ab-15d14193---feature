@@ -91,3 +91,111 @@ test('修正错误后重新比较可得到结论（拒绝状态可恢复）', as
   );
   await expect(page.getByTestId('errors')).toHaveCount(0);
 });
+
+test('不等价结论后可提取最少锁定条件，并按 ASCII 序稳定展示', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute(
+    'data-equivalent',
+    'false',
+  );
+
+  // 提取前只有入口与说明，没有报告
+  await expect(page.getByTestId('extract-locking')).toBeVisible();
+  await expect(page.getByTestId('locking-report')).toHaveCount(0);
+
+  await page.getByTestId('extract-locking').click();
+
+  const report = page.getByTestId('locking-report');
+  await expect(report).toBeVisible();
+
+  // 锁定项：A=0、C=1，且按 ASCII 变量序排列（A 在 C 前）
+  const locked = page.getByTestId('locking-locked');
+  await expect(locked).toContainText('A=0');
+  await expect(locked).toContainText('C=1');
+  const lockedText = await locked.innerText();
+  expect(lockedText.indexOf('A=0')).toBeLessThan(lockedText.indexOf('C=1'));
+
+  // 未锁定输入：B
+  const unlocked = page.getByTestId('locking-unlocked');
+  await expect(unlocked).toContainText('B');
+  await expect(unlocked).not.toContainText('A');
+  await expect(unlocked).not.toContainText('C');
+
+  // 核算结论：所有补全均分歧（2^1 = 2 种补全）
+  const verdict = page.getByTestId('locking-verdict');
+  await expect(verdict).toContainText('所有补全均分歧');
+  await expect(verdict).toContainText('2^1 = 2');
+  await expect(verdict).toContainText('复核通过');
+
+  // 逐变量状态表：A 锁定 0、B 未锁定、C 锁定 1
+  const rows = report.locator('.locking__table tbody tr');
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText('A');
+  await expect(rows.nth(0)).toContainText('锁定 = 0');
+  await expect(rows.nth(1)).toContainText('B');
+  await expect(rows.nth(1)).toContainText('未锁定');
+  await expect(rows.nth(2)).toContainText('C');
+  await expect(rows.nth(2)).toContainText('锁定 = 1');
+});
+
+test('等价结论不提供条件提取入口', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：等价改版' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute(
+    'data-equivalent',
+    'true',
+  );
+  await expect(page.getByTestId('locking')).toHaveCount(0);
+  await expect(page.getByTestId('extract-locking')).toHaveCount(0);
+});
+
+test('输入被重新编辑后，旧锁定条件报告被清除（比较结论保持）', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await page.getByTestId('extract-locking').click();
+  await expect(page.getByTestId('locking-report')).toBeVisible();
+
+  // 重新编辑任一输入框
+  await page.locator('#ta-b').click();
+  await page.keyboard.press(' ');
+
+  await expect(page.getByTestId('locking-report')).toHaveCount(0);
+  // 原比较结论语义不变，仍保留展示
+  await expect(page.getByTestId('verdict')).toHaveAttribute(
+    'data-equivalent',
+    'false',
+  );
+});
+
+test('重新比较后旧锁定条件报告不保留，需重新发起提取', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await page.getByTestId('extract-locking').click();
+  await expect(page.getByTestId('locking-report')).toBeVisible();
+
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute(
+    'data-equivalent',
+    'false',
+  );
+  await expect(page.getByTestId('locking-report')).toHaveCount(0);
+  await expect(page.getByTestId('extract-locking')).toBeVisible();
+});
+
+test('校验失败整次拒绝时，旧锁定条件报告不保留', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await page.getByTestId('extract-locking').click();
+  await expect(page.getByTestId('locking-report')).toBeVisible();
+
+  await page.getByRole('button', { name: '示例：各类错误' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('errors')).toBeVisible();
+  await expect(page.getByTestId('locking')).toHaveCount(0);
+  await expect(page.getByTestId('locking-report')).toHaveCount(0);
+});

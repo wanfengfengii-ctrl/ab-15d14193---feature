@@ -1,5 +1,7 @@
 // 门图共享类型定义
 
+import type { BddManager, BddNode } from './bdd/bdd';
+
 /** 支持的节点类型 */
 export type NodeType =
   | 'INPUT'
@@ -83,4 +85,34 @@ export interface AnalysisResult {
     cacheHits: number;
     cacheMisses: number;
   };
+  /**
+   * 本次比较的共享 BDD 管理器与两输出异或根（等价时为 0 终端）。
+   * “最少锁定条件提取”必须在这份既有 ROBDD 结果上完成，
+   * 不得重建或另起搜索。
+   */
+  bdd: BddManager;
+  diffRoot: BddNode;
+}
+
+/** 最少锁定条件中的一项：把 INPUT 变量 variable 锁定为 value */
+export interface LockLiteral {
+  variable: string;
+  value: 0 | 1;
+}
+
+/**
+ * 最少输入锁定条件报告：
+ * 锁定 locked 中每一项后，未锁定输入的任意组合都令两图输出分歧。
+ */
+export interface LockingReport {
+  /** 本次比较的共享变量序（ASCII 升序），展示顺序以此为准 */
+  variables: string[];
+  /** 最少锁定项，按变量名 ASCII 升序 */
+  locked: LockLiteral[];
+  /** 未锁定输入，ASCII 升序 */
+  unlocked: string[];
+  /** 未锁定输入的补全总数（2^unlocked.length 的精确十进制字符串） */
+  completionCount: string;
+  /** 精确全局复核：异或根在锁定赋值下 restrict 为 1 终端（所有补全均分歧） */
+  verified: boolean;
 }
