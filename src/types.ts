@@ -64,6 +64,33 @@ export interface GateEval {
   value: 0 | 1;
 }
 
+/** 单个锁定项（一个输入被固定为某个值） */
+export interface LockedLiteral {
+  /** INPUT 变量名 */
+  variable: string;
+  /** 被锁定的取值 */
+  value: 0 | 1;
+}
+
+/**
+ * 最少文字强制（锁定）条件报告。
+ * 仅在“本次比较已成功且结论为不等价”时可提取；
+ * 输入被重新编辑、校验失败、两图等价或尚未重新比较时一律失效。
+ */
+export interface LockConditionReport {
+  /** 最少文字的部分赋值，按变量名 ASCII 升序排列 */
+  locked: LockedLiteral[];
+  /** 未被锁定的输入变量，按变量名 ASCII 升序排列 */
+  unlocked: string[];
+  /** 未锁定输入的自由组合数 = 2^|unlocked|（“所有补全”即此数） */
+  completionCount: number;
+  /**
+   * 精确全局裁决：对锁定条件逐项 restrict 后，异或根是否化为 1 终端。
+   * 为 true 表示所有 completionCount 种补全下两图输出均不同。
+   */
+  allCompletionsDiffer: boolean;
+}
+
 /** 等价性分析的完整结果 */
 export interface AnalysisResult {
   equivalent: boolean;
@@ -76,6 +103,11 @@ export interface AnalysisResult {
   /** 两图输出在反例下的值 */
   outputA: 0 | 1;
   outputB: 0 | 1;
+  /**
+   * 仅不等价时存在：在本次比较的共享 BDD / 异或根上提取最少锁定条件。
+   * 闭包绑定“本次”结果，重新比较后旧闭包不再被使用，保证报告不陈旧。
+   */
+  extractLockConditions?: () => LockConditionReport;
   bddStats: {
     /** 唯一表中变量节点个数 */
     uniqueNodes: number;

@@ -91,3 +91,91 @@ test('修正错误后重新比较可得到结论（拒绝状态可恢复）', as
   );
   await expect(page.getByTestId('errors')).toHaveCount(0);
 });
+
+test('不等价时可提取最少锁定条件：A=0、C=1 锁定，B 自由，2 种补全均分歧', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+
+  const action = page.getByTestId('lock-action');
+  await expect(action).toBeVisible();
+  await action.getByRole('button', { name: '提取最少输入锁定条件' }).click();
+
+  const report = page.getByTestId('lock-report');
+  await expect(report).toBeVisible();
+
+  // 锁定项按 ASCII 变量序：A=0 在前，C=1 在后（A=0 与 B=0 平票时取变量名靠前的 A）
+  const lits = report.locator('.lock-lit');
+  await expect(lits).toHaveCount(2);
+  await expect(lits.nth(0)).toContainText('A');
+  await expect(lits.nth(0)).toHaveAttribute('data-bit', '0');
+  await expect(lits.nth(1)).toContainText('C');
+  await expect(lits.nth(1)).toHaveAttribute('data-bit', '1');
+
+  // 未锁定输入与补全数
+  await expect(report).toContainText('B');
+  await expect(report).toContainText('2');
+
+  // 精确裁决结论
+  const conclusion = page.getByTestId('lock-conclusion');
+  await expect(conclusion).toHaveAttribute('data-holds', 'true');
+  await expect(conclusion).toContainText('所有补全均分歧');
+});
+
+test('等价改版不提供锁定条件提取入口', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：等价改版' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('verdict')).toHaveAttribute(
+    'data-equivalent',
+    'true',
+  );
+  await expect(page.getByTestId('lock-action')).toHaveCount(0);
+  await expect(page.getByTestId('lock-report')).toHaveCount(0);
+});
+
+test('输入被重新编辑后旧锁定报告立即消失（即使尚未重新比较）', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await page.getByTestId('lock-action').getByRole('button', { name: '提取最少输入锁定条件' }).click();
+  await expect(page.getByTestId('lock-report')).toBeVisible();
+
+  // 编辑左栏
+  await page.locator('#ta-a').pressSequentially('\n');
+  await expect(page.getByTestId('lock-report')).toHaveCount(0);
+  await expect(page.getByTestId('lock-action')).toHaveCount(0);
+
+  // 重新比较后入口恢复，可再次提取
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('lock-action')).toBeVisible();
+  await page.getByTestId('lock-action').getByRole('button', { name: '提取最少输入锁定条件' }).click();
+  await expect(page.getByTestId('lock-report')).toBeVisible();
+
+  // 编辑右栏同样作废旧报告
+  await page.locator('#ta-b').pressSequentially('\n');
+  await expect(page.getByTestId('lock-report')).toHaveCount(0);
+});
+
+test('校验失败或改比等价图后旧锁定报告均不保留', async ({ page }) => {
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await page.getByTestId('lock-action').getByRole('button', { name: '提取最少输入锁定条件' }).click();
+  await expect(page.getByTestId('lock-report')).toBeVisible();
+
+  // 改比等价改版
+  await page.getByRole('button', { name: '示例：等价改版' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('lock-report')).toHaveCount(0);
+  await expect(page.getByTestId('lock-action')).toHaveCount(0);
+
+  // 再回到分歧并提取
+  await page.getByRole('button', { name: '示例：罕见分歧' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await page.getByTestId('lock-action').getByRole('button', { name: '提取最少输入锁定条件' }).click();
+  await expect(page.getByTestId('lock-report')).toBeVisible();
+
+  // 触发校验失败（错误示例）
+  await page.getByRole('button', { name: '示例：各类错误' }).click();
+  await page.getByRole('button', { name: '校验并比较' }).click();
+  await expect(page.getByTestId('errors')).toBeVisible();
+  await expect(page.getByTestId('lock-report')).toHaveCount(0);
+  await expect(page.getByTestId('verdict')).toHaveCount(0);
+});

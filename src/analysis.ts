@@ -7,6 +7,7 @@
 //  - 反例给出后，对两图逐门复算，便于功能安全工程师人工核对。
 
 import { BddManager, type BinOp, type BddNode } from './bdd/bdd';
+import { extractLockConditions } from './forcing';
 import type {
   AnalysisResult,
   GateEval,
@@ -187,6 +188,7 @@ export function analyze(graphA: Graph, graphB: Graph): AnalysisResult {
   const aEval = reevaluate(graphA, 'A', builtA.order, counterexample);
   const bEval = reevaluate(graphB, 'B', builtB.order, counterexample);
 
+  const bdd = builtA.bdd;
   return {
     equivalent: false,
     variables,
@@ -194,10 +196,13 @@ export function analyze(graphA: Graph, graphB: Graph): AnalysisResult {
     trace: [...aEval.trace, ...bEval.trace],
     outputA: aEval.output,
     outputB: bEval.output,
+    // 条件提取按需发起：闭包绑定本次比较的共享 BDD 与异或根，
+    // 直接在既有 ROBDD 结果上做精确裁决，不重新建图、不抽样。
+    extractLockConditions: () => extractLockConditions(bdd, diff, variables),
     bddStats: {
-      uniqueNodes: builtA.bdd.uniqueNodeCount,
-      cacheHits: builtA.bdd.cacheHits,
-      cacheMisses: builtA.bdd.cacheMisses,
+      uniqueNodes: bdd.uniqueNodeCount,
+      cacheHits: bdd.cacheHits,
+      cacheMisses: bdd.cacheMisses,
     },
   };
 }

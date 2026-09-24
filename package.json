@@ -2,7 +2,7 @@
   "name": "interlocking-equivalence-workbench",
   "version": "1.0.0",
   "private": true,
-  "description": "纯前端联锁门图等价性工作台：双栏门图、ROBDD 等价判定与唯一反例",
+  "description": "纯前端联锁门图等价性工作台：双栏门图、ROBDD 等价判定、唯一反例与最少输入锁定条件提取",
   "type": "module",
   "scripts": {
     "dev": "vite",

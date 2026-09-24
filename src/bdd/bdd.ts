@@ -26,6 +26,12 @@ export type BinOp = 'and' | 'or' | 'xor';
 const ZERO: BddNode = 0;
 const ONE: BddNode = 1;
 
+/** 强制条件文字：变量序下标 + 固定值 */
+export interface ForcingLiteral {
+  level: number;
+  value: 0 | 1;
+}
+
 export class BddManager {
   /** 下标 0/1 预留给两个终端；变量节点从下标 2 开始 */
   private nodes: InternalNode[] = [];
@@ -210,6 +216,105 @@ export class BddManager {
       n = assignment[this.variables[node.level]] === 1 ? node.high : node.low;
     }
     return n === ONE ? 1 : 0;
+  }
+
+  /** 是否为 1 终端（恒真） */
+  isOne(f: BddNode): boolean {
+    return f === ONE;
+  }
+
+  /**
+   * 约束（Shannon cofactor）：把第 level 个变量固定为 value，返回 f|_{v=value}。
+   * 纯函数式下降 + mk 重建：只复用/约简既有节点，不改动任何已有节点；
+   * 这是建立在既有 ROBDD 上的精确操作（无抽样、无枚举），供强制条件核算使用。
+   */
+  restrict(f: BddNode, level: number, value: 0 | 1): BddNode {
+    const cache = new Map<BddNode, BddNode>();
+    const go = (n: BddNode): BddNode => {
+      // 终端与任何变量无关
+      if (n < 2) return n;
+      const cached = cache.get(n);
+      if (cached !== undefined) return cached;
+
+      const node = this.nodes[n - 2];
+      let result: BddNode;
+      if (node.level === level) {
+        // 命中被约束变量：整条分支被选定（分支指针直接共享，无需重建）
+        result = value === 1 ? node.high : node.low;
+      } else if (node.level < level) {
+        // 更靠前的变量：约束只作用于两条下层子函数
+        result = this.mk(node.level, go(node.low), go(node.high));
+      } else {
+        // 更靠后的变量：该函数与被约束变量无关，原样返回
+        result = n;
+      }
+      cache.set(n, result);
+      return result;
+    };
+    return go(f);
+  }
+
+  /**
+   * 在既有 ROBDD 节点 f 上求“文字数最少的强制（forcing）部分赋值”：
+   * 固定返回的每个文字后，其余变量任意取值，f 恒为 1。
+   *
+   * 精确全局裁决（纯 BDD 结构递推，不抽样、不随机搜索、不只验证单个反例）：
+   * 对变量序最前的变量 v（低 L、高 H），任意部分赋值只有三种选择——
+   *   (a) 锁 v=0：再求 L 的最少强制条件；
+   *   (b) 锁 v=1：再求 H 的最少强制条件；
+   *   (c) 不锁 v：需要同一组更深的赋值同时令 L、H 恒为 1，
+   *       等价于令 Apply(and, L, H) 恒为 1（AND 仍是同一 ROBDD 上的精确运算）。
+   * 三者取文字数最少；字数相同时按“变量名升序、同变量 0 先于 1”的字典序
+   * 取首个——(a)/(b) 首文字即 v，必早于 (c) 的更深首文字，且 0 先于 1。
+   *
+   * f 可满足时返回非 null（异或根非 0 终端即可满足）；ZERO 终端返回 null。
+   */
+  minimumForcingAssignment(f: BddNode): ForcingLiteral[] | null {
+    if (f === ONE) return [];
+    if (f === ZERO) return null;
+
+    const memo = new Map<BddNode, ForcingLiteral[] | null>();
+
+    const lessLits = (a: ForcingLiteral[], b: ForcingLiteral[]): boolean => {
+      const n = Math.min(a.length, b.length);
+      for (let i = 0; i < n; i++) {
+        if (a[i].level !== b[i].level) return a[i].level < b[i].level;
+        if (a[i].value !== b[i].value) return a[i].value < b[i].value;
+      }
+      return a.length < b.length;
+    };
+
+    const solve = (n: BddNode): ForcingLiteral[] | null => {
+      if (n === ONE) return [];
+      if (n === ZERO) return null;
+      const cached = memo.get(n);
+      if (cached !== undefined) return cached;
+
+      const node = this.nodes[n - 2];
+      const candidates: ForcingLiteral[][] = [];
+
+      // 选择 (a) v=0 / (b) v=1：0 先于 1 入列
+      const subLow = solve(node.low);
+      if (subLow) candidates.push([{ level: node.level, value: 0 }, ...subLow]);
+      const subHigh = solve(node.high);
+      if (subHigh) candidates.push([{ level: node.level, value: 1 }, ...subHigh]);
+
+      // 选择 (c) 不锁 v：同一深赋值须同时强制 L 与 H，即强制 AND(L, H)
+      const subBoth = solve(this.apply('and', node.low, node.high));
+      if (subBoth) candidates.push(subBoth);
+
+      let best: ForcingLiteral[] | null = null;
+      for (const cand of candidates) {
+        if (best === null || cand.length < best.length ||
+            (cand.length === best.length && lessLits(cand, best))) {
+          best = cand;
+        }
+      }
+      memo.set(n, best);
+      return best;
+    };
+
+    return solve(f);
   }
 
   /** 供调试/测试：导出节点内部结构 */

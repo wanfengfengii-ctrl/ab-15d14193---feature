@@ -256,6 +256,108 @@ body {
   margin: 10px 0 0;
 }
 
+/* 最少锁定条件 */
+.lock-action {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 22px;
+  margin-bottom: 18px;
+}
+
+.lock-action__hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lock-card {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px 22px;
+  margin-bottom: 18px;
+}
+
+.lock-card h3 {
+  margin: 0 0 12px;
+}
+
+.lock-card__block {
+  margin-bottom: 12px;
+}
+
+.lock-card__label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.lock-card__list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+
+.lock-lit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  background: #0b1020;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 15px;
+}
+
+.lock-lit__var {
+  font-weight: 700;
+}
+
+.lock-lit__eq {
+  color: var(--muted);
+}
+
+.lock-lit__val {
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.lock-lit[data-bit='0'] .lock-lit__val {
+  color: var(--muted);
+}
+
+.lock-lit[data-bit='1'] .lock-lit__val {
+  color: var(--bad);
+}
+
+.lock-card__unlocked {
+  margin: 0;
+  font-size: 14px;
+}
+
+.lock-card__none {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lock-card__conclusion {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+
+.lock-card__conclusion--ok {
+  color: var(--ok);
+}
+
+.lock-card__conclusion--bad {
+  color: var(--bad);
+}
+
 /* 图形区 */
 .graphics {
   display: grid;
